@@ -7,11 +7,11 @@ It scan if a parameter is injectable , and also find how to exploit.
 
 ## Functions:
 
-#### Scan
-#### Found an injection
-#### Read a file from the DBMS
-#### Write a file into the DBMS
-#### Upload a reverse shell into the DBMS 
+##### . Scan
+##### . Found an injection
+##### . Read a file from the DBMS
+##### . Write a file into the DBMS
+##### . Upload a reverse shell into the DBMS 
 
 
 ## Use
