@@ -1,9 +1,9 @@
 # sql_injection
 A sql injection scan and exploit script
 
-This script can be used if you can't use sqlmap, or for any restriction like wih some ctf.
+This script can be used if you can't use sqlmap, or for any restriction like wih some ctfs.
 
-It scan if a parameter is injectable , and also find how to exploit.
+It scan if a parameter is injectable , and also find how to exploit it.
 
 ## Functions:
 
