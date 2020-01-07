@@ -127,7 +127,7 @@ def request_verify(request, verify,myhash,type):
 #make a request
 def send_request():
   if ( args.method.lower() == "get" ):
-    req=requests.post(args.url,allow_redirects=False,verify=False,params=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30)
+    req=requests.post(args.url,allow_redirects=False,verify=False,params=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30,proxies=proxies)
   else:
     req=requests.post(args.url,allow_redirects=False,verify=False,data=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30,proxies=proxies)
   return req  
