@@ -8,6 +8,7 @@ It scan if a parameter is injectable , and also find how to exploit it.
 ## Functions:
 
 ##### . Scan
+##### . Bypass an authentication Form
 ##### . Found an injection
 ##### . Read a file from the DBMS
 ##### . Write a file into the DBMS
@@ -20,7 +21,7 @@ It scan if a parameter is injectable , and also find how to exploit it.
 usage: sql_injection [-h] --data DATA [-m METHOD] [--file-dest REMOTEPAH]
                      [--file-write LOCALPATH] [--file-read PATHTOREAD]
                      [--upload-revshell REVSHELLPATH] [-H HEADER] [-c COOKIES]
-                     -u URL -p PARAMETER [-l LEVEL] [-v VERBOSE]
+                     -u URL -p PARAMETER [-b BYPASS] [-l LEVEL] [-v VERBOSE]
 
 A sql injection scan and exploit script
 
@@ -49,14 +50,24 @@ optional arguments:
   -u URL, --url URL     The url to use for sqli
   -p PARAMETER, --parameter PARAMETER
                         The injectable parameter
+  -b BYPASS, --bypass BYPASS
+                        Bypass the authentication. define the failed
+                        login message
   -l LEVEL, --level LEVEL
                         The level of the scan (l|h) "l" for little, and "h"
                         for huge
   -v VERBOSE, --verbose VERBOSE
                         Define verbose output. set to False by default
+
 ```
 
 ## Examples
+
+#### Bypass a form authetication
+
+```
+$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -b "Your Login Name or Password is invalid" -v 1
+```
 
 #### Found an injection
 

