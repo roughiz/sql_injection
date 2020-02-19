@@ -8,7 +8,7 @@ It scan if a parameter is injectable , and also find how to exploit it.
 ## Functions:
 
 ##### . Scan
-##### . Bypass an authentication Form
+##### . Bypass an blind authentication Form with return message (true,false)
 ##### . Found an injection
 ##### . Read a file from the DBMS
 ##### . Write a file into the DBMS
@@ -21,7 +21,8 @@ It scan if a parameter is injectable , and also find how to exploit it.
 usage: sql_injection [-h] --data DATA [-m METHOD] [--file-dest REMOTEPAH]
                      [--file-write LOCALPATH] [--file-read PATHTOREAD]
                      [--upload-revshell REVSHELLPATH] [-H HEADER] [-c COOKIES]
-                     -u URL -p PARAMETER [-b BYPASS] [-l LEVEL] [-v VERBOSE]
+                     -u URL -p PARAMETER [-ns BYPASS] [-s FOUND] [-l LEVEL]
+                     [-v VERBOSE]
 
 A sql injection scan and exploit script
 
@@ -50,23 +51,31 @@ optional arguments:
   -u URL, --url URL     The url to use for sqli
   -p PARAMETER, --parameter PARAMETER
                         The injectable parameter
-  -b BYPASS, --bypass BYPASS
-                        Bypass the authentication. define the failed
-                        login message
+  -ns BYPASS, --not-string BYPASS
+                        Define the failed login message. Script try sqli until
+                        this string is not in the request output
+  -s FOUND, --string FOUND
+                        Define the successfully login message. Script try sqli
+                        until the string is in the request output
   -l LEVEL, --level LEVEL
                         The level of the scan (l|h) "l" for little, and "h"
                         for huge
   -v VERBOSE, --verbose VERBOSE
                         Define verbose output. set to False by default
-
 ```
 
 ## Examples
 
-#### Bypass a form authetication
+#### Bypass a form authetication returning a text when false
 
 ```
-$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -b "Your Login Name or Password is invalid" -v 1
+$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -ns "Your Login Name or Password is invalid" -v 1
+```
+
+#### Bypass a form authetication returning a text when true
+
+```
+$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -s "Success" -v 1
 ```
 
 #### Found an injection
