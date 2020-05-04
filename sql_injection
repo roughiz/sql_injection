@@ -9,6 +9,7 @@ import string
 import argparse
 import sys, os, re
 from termcolor import colored
+import pyfiglet
 
 arg_parser = argparse.ArgumentParser(description='A sql injection scan and exploit script')
 arg_parser.add_argument('--data', dest='data', help='Data string to be sent through POST/GET\n Like "category=2&productId=1&productName=name" ', type=str, required=True)
@@ -28,6 +29,13 @@ arg_parser.add_argument('--prefix', dest='prefix', help='Define a prefix variabl
 arg_parser.add_argument('--proxy', dest='proxy', help='Use a default proxy at "127.0.0.1:8080". set to False by default', action="store_true")
 arg_parser.add_argument('-v', '--verbose', dest='verbose', help='Define verbose output. set to False by default', action="store_true")
 args = arg_parser.parse_args()
+# Roughiz banner
+print("")
+ascii_banner = pyfiglet.figlet_format("R@()Gh1z tool")
+print(ascii_banner)
+print colored('Find all scripts in: https://github.com/roughiz\n\n', "green")  
+print colored("SQLI script by R0()Gh1z", "green")
+print "-=" * 50+"\n"
 print("")
 # Gloabal vars
 TYPE= {}

